@@ -13,6 +13,7 @@ object Zipkin extends Build {
   val ZOOKEEPER_VERSION = Map("candidate" -> "0.0.41", "group" -> "0.0.44", "client" -> "0.0.35")
   val ALGEBIRD_VERSION  = "0.1.13"
   val HBASE_VERSION = "0.94.10"
+  val ACCUMULO_VERSION = "1.5.0"
 
   val proxyRepo = Option(System.getenv("SBT_PROXY_REPO"))
   val travisCi = Option(System.getenv("SBT_TRAVIS_CI")) // for adding travis ci maven repos before others
@@ -76,7 +77,7 @@ object Zipkin extends Build {
     Project(
       id = "zipkin",
       base = file(".")
-    ) aggregate(test, queryCore, queryService, common, scrooge, collectorScribe, web, cassandra, anormDB, collectorCore, collectorService, kafka, redis, hbase)
+    ) aggregate(test, queryCore, queryService, common, scrooge, collectorScribe, web, cassandra, anormDB, collectorCore, collectorService, kafka, redis, hbase, accumulo)
 
   lazy val test   = Project(
     id = "zipkin-test",
@@ -229,7 +230,7 @@ object Zipkin extends Build {
       base =>
         (base / "config" +++ base / "src" / "test" / "resources").get
     }
-  ).dependsOn(queryCore, cassandra, redis, anormDB, hbase)
+  ).dependsOn(queryCore, cassandra, redis, anormDB, hbase, accumulo)
 
   lazy val collectorScribe =
     Project(
@@ -272,7 +273,7 @@ object Zipkin extends Build {
       base =>
         (base / "config" +++ base / "src" / "test" / "resources").get
     }
-  ).dependsOn(collectorCore, collectorScribe, cassandra, kafka, redis, anormDB, hbase)
+  ).dependsOn(collectorCore, collectorScribe, cassandra, kafka, redis, anormDB, hbase, accumulo)
 
   lazy val web =
     Project(
@@ -335,6 +336,29 @@ object Zipkin extends Build {
       "org.apache.hadoop"     % "hadoop-test"           % "1.1.2" % "test",
       "commons-logging"       % "commons-logging"       % "1.1.1",
       "commons-configuration" % "commons-configuration" % "1.6",
+      "org.apache.zookeeper"  % "zookeeper"             % "3.4.5" % "runtime" notTransitive(),
+      "org.slf4j"             % "slf4j-log4j12"         % "1.6.4" % "runtime",
+      "com.twitter"           % "util-logging"          % UTIL_VERSION
+    ) ++ testDependencies,
+
+    /* Add configs to resource path for ConfigSpec */
+    unmanagedResourceDirectories in Test <<= baseDirectory {
+      base =>
+        (base / "config" +++ base / "src" / "test" / "resources").get
+    }
+  ).dependsOn(scrooge)
+  
+  lazy val accumulo = Project(
+    id = "zipkin-accumulo",
+    base = file("zipkin-accumulo"),
+    settings = defaultSettings
+  ).settings(
+    parallelExecution in Test := false,
+    libraryDependencies ++= Seq(
+      "org.apache.accumulo"   % "accumulo-core"         % ACCUMULO_VERSION,
+      "org.apache.hadoop"     % "hadoop-core"           % "1.1.2",
+      "org.apache.hadoop"     % "hadoop-test"           % "1.1.2" % "test",
+      "commons-io"       	  % "commons-io"       		% "2.1",
       "org.apache.zookeeper"  % "zookeeper"             % "3.4.5" % "runtime" notTransitive(),
       "org.slf4j"             % "slf4j-log4j12"         % "1.6.4" % "runtime",
       "com.twitter"           % "util-logging"          % UTIL_VERSION

@@ -1,3 +1,4 @@
+addSbtPlugin("com.typesafe.sbteclipse" % "sbteclipse-plugin" % "2.2.0")
 
 resolvers ++= Seq(
   "twitter.com" at "http://maven.twttr.com/",
