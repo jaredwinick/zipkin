@@ -1,13 +1,8 @@
 package com.twitter.zipkin.accumulo
 
 import com.twitter.zipkin.builder.Builder
+import com.twitter.zipkin.storage.Aggregates
 
 object AggregatesBuilder {
-	def apply() = {
-	  new AggregatesBuilder()
-	}
-}
 
-class AggregatesBuilder() extends Builder[Aggregates] {
- 
 }

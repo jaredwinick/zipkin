@@ -361,7 +361,8 @@ object Zipkin extends Build {
       "commons-io"       	  % "commons-io"       		% "2.1",
       "org.apache.zookeeper"  % "zookeeper"             % "3.4.5" % "runtime" notTransitive(),
       "org.slf4j"             % "slf4j-log4j12"         % "1.6.4" % "runtime",
-      "com.twitter"           % "util-logging"          % UTIL_VERSION
+      "com.twitter"           % "util-logging"          % UTIL_VERSION,
+      "org.apache.accumulo"   % "accumulo-minicluster"  % ACCUMULO_VERSION
     ) ++ testDependencies,
 
     /* Add configs to resource path for ConfigSpec */
@@ -369,6 +370,6 @@ object Zipkin extends Build {
       base =>
         (base / "config" +++ base / "src" / "test" / "resources").get
     }
-  ).dependsOn(scrooge)
+  ).dependsOn(common, scrooge)
 }
 
