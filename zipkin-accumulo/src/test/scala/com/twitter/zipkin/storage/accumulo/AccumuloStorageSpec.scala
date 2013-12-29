@@ -16,6 +16,7 @@ import com.twitter.zipkin.common.Endpoint
 import com.twitter.zipkin.common.BinaryAnnotation
 import java.nio.ByteBuffer
 import com.twitter.zipkin.common.AnnotationType
+import com.twitter.zipkin.query.Trace
 
 class AccumuloStorageSpec extends Specification {
 
@@ -36,54 +37,95 @@ class AccumuloStorageSpec extends Specification {
   val span2 = Span(667, "methodcall2", spanId, None, List(ann2),
     List(binaryAnnotation("BAH2", "BEH2")))
     
-  "AccumuloStorage" should {
-
-    var miniAccumuloCluster: MiniAccumuloCluster = null
+  var miniAccumuloCluster: MiniAccumuloCluster = null
+  var connector: Connector = null
+  var instance: Instance = null
+    
+  "AccumuloStorage" should {  
 
     doBefore {
-      println("Hello")
       val tempDirectory = Files.createTempDir()
       miniAccumuloCluster = new MiniAccumuloCluster(tempDirectory, "password")
       miniAccumuloCluster.start()
       println("ZK:" + miniAccumuloCluster.getZooKeepers())
       
       // This shouldn't be here - we should make the AccumuloStorage handled creating tables
-      val instance: Instance = new ZooKeeperInstance(miniAccumuloCluster.getInstanceName(), miniAccumuloCluster.getZooKeepers())
-      val connector: Connector = instance.getConnector("root", new PasswordToken("password"))
+      instance = new ZooKeeperInstance(miniAccumuloCluster.getInstanceName(), miniAccumuloCluster.getZooKeepers())
+      connector = instance.getConnector("root", new PasswordToken("password"))
       connector.tableOperations().create("zipkin_traces")
     }
-
+    
     doAfter {
       miniAccumuloCluster.stop()
-      println("Goodbye")
+      miniAccumuloCluster = null
     }
 
+ 
     "tracesExist" in {
 
       val storage = new AccumuloStorage(miniAccumuloCluster.getInstanceName(), miniAccumuloCluster.getZooKeepers(), "root", "password")
       Await.result(storage.storeSpan(span1))
+      Await.result(storage.storeSpan(span2))
+
+      // Wait at least the batchWriter latency to make sure writes are flushed
+      Thread.sleep(storage.BATCH_WRITER_MAX_LATENCY_MILLISECONDS + 1000)
       
-      /*
-      val instance: Instance = new ZooKeeperInstance(miniAccumuloCluster.getInstanceName(), miniAccumuloCluster.getZooKeepers())
-      val connector: Connector = instance.getConnector("root", new PasswordToken("password"))
-      connector.tableOperations().create("test")
-      val batchWriter: BatchWriter = connector.createBatchWriter("test", new BatchWriterConfig())
-      val mutation: Mutation = new Mutation("row2")
-      mutation.put("cf","cq",new Value("1".getBytes()))
-      batchWriter.addMutation(mutation)
-      batchWriter.flush()
+      Await.result(storage.tracesExist(List(span1.traceId, span2.traceId, traceIdDNE))) must haveTheSameElementsAs(Set(span1.traceId, span2.traceId))
+      Await.result(storage.tracesExist(List(span2.traceId))) must haveTheSameElementsAs(Set(span2.traceId))
+      Await.result(storage.tracesExist(List(traceIdDNE))).isEmpty mustEqual true
 
-      val scanner = connector.createScanner("test", new Authorizations())
-      val iterator = scanner.iterator()
-      while (iterator.hasNext()) {
-
-        val entry: Entry[Key, Value] = iterator.next()
-        println("Key:" + entry.getKey().toString())
-        println("Value:" + entry.getValue().toString())
-      }
-*/
-      true mustEqual true
+      storage.close()
     }
+  
+    
+    "getSpansByTraceId" in {
+      val storage = new AccumuloStorage(miniAccumuloCluster.getInstanceName(), miniAccumuloCluster.getZooKeepers(), "root", "password")
+
+      Await.result(storage.storeSpan(span1))
+      Await.result(storage.storeSpan(span2))
+      
+       // Wait at least the batchWriter latency to make sure writes are flushed
+      Thread.sleep(storage.BATCH_WRITER_MAX_LATENCY_MILLISECONDS + 1000)
+
+      val spans = Await.result(storage.getSpansByTraceId(span1.traceId))
+      spans.isEmpty mustEqual false
+      spans(0) mustEqual span1
+      spans.size mustEqual 1
+
+      storage.close()
+    }
+    
+    "getSpansByTraceIds" in {
+    	val storage = new AccumuloStorage(miniAccumuloCluster.getInstanceName(), miniAccumuloCluster.getZooKeepers(), "root", "password")
+
+      Await.result(storage.storeSpan(span1))
+      Await.result(storage.storeSpan(span2))
+      
+       // Wait at least the batchWriter latency to make sure writes are flushed
+      Thread.sleep(storage.BATCH_WRITER_MAX_LATENCY_MILLISECONDS + 1000)
+
+      val emptySpans = Await.result(storage.getSpansByTraceIds(List(traceIdDNE)))
+      emptySpans.isEmpty mustEqual true
+
+      val oneSpan = Await.result(storage.getSpansByTraceIds(List(span1.traceId)))
+      oneSpan.isEmpty mustEqual false
+      val trace1 = Trace(oneSpan(0))
+      trace1.spans.isEmpty mustEqual false
+      trace1.spans(0) mustEqual span1
+
+      
+      val twoSpans = Await.result(storage.getSpansByTraceIds(List(span1.traceId, span2.traceId)))
+      twoSpans.isEmpty mustEqual false
+      val trace2a = Trace(twoSpans(0))
+      val trace2b = Trace(twoSpans(1))
+      trace2a.spans.isEmpty mustEqual false
+      trace2a.spans(0) mustEqual span1
+      trace2b.spans.isEmpty mustEqual false
+      trace2b.spans(0) mustEqual span2
+      
+      storage.close()
+    }
+
   }
 
 }
